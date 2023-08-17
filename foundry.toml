@@ -1,0 +1,9 @@
+[profile.default]
+src = 'contracts'
+out = 'forge/out'
+libs = ['node_modules', 'forge/lib']
+test = 'forge/test'
+cache_path  = 'forge/cache'
+
+# disable for CI (used for debugging liquidity issues)
+no_match_test = "test.*SwapVia"

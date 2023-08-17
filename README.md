@@ -27,6 +27,16 @@ Set up your Autocode account for **FREE** at [Autocode.com]((https://autocode.co
 
 If you want to send email alerts when a transaction is mined, open a SendGrid account for **FREE** at [sendgrid.com](https://sendgrid.com/).
 
+## Liquidator Contract Deployments
+
+The liquidator contract (`./contracts/OnChainLiquidator.sol`) is deployed and verified. Any caller of the contract can initalize a liquidation and receive the resulting excess base asset tokens if a liquidation transaction is successful.
+
+```
+arbitrum: '0x18A715c11Cf4ed6A0cf94FCc93a290d4b2d14dD7'
+polygon: '0xbf4555f5c127479b225332cd5520cd54c68f814c'
+mainnet: '0xC70e2915f019e27BAA493972e4627dbc0ED7a794'
+```
+
 ## Test Run
 
 This command will run the liquidation bot but it will not try to liquidate borrowers, it will use Alchemy to estimate the arbitrage transaction results using [Alchemy Transact simulation](https://docs.alchemy.com/reference/simulation-asset-changes) (Asset Changes JSON RPC endpoint).

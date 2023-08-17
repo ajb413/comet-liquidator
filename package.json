@@ -8,6 +8,7 @@
     "liquidator": "hardhat run scripts/liquidation_bot/index.ts"
   },
   "dependencies": {
+    "@compound-finance/sleuth": "^1.0.1-alpha8",
     "@flashbots/ethers-provider-bundle": "^0.6.2",
     "@nomiclabs/hardhat-ethers": "^2.2.3",
     "alchemy-sdk": "^2.9.2",

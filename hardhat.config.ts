@@ -35,12 +35,12 @@ export function requireEnv(varName, msg?: string): string {
 }
 
 // required environment variables
-[
-  'ALCHEMY_KEY',
+// [
+  // 'ALCHEMY_KEY',
   // 'ETHERSCAN_KEY',
   // 'POLYGONSCAN_KEY',
   // 'ARBISCAN_KEY',
-].map(v => requireEnv(v));
+// ].map(v => requireEnv(v));
 
 // Networks
 interface NetworkConfig {
@@ -52,7 +52,11 @@ interface NetworkConfig {
 }
 
 const networkConfigs: NetworkConfig[] = [
-  { network: 'mainnet', chainId: 1 },
+  {
+    network: 'mainnet',
+    chainId: 1,
+    url: `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
+  },
   { network: 'goerli', chainId: 5 },
   {
     network: 'polygon',
@@ -62,8 +66,7 @@ const networkConfigs: NetworkConfig[] = [
   {
     network: 'arbitrum',
     chainId: 42161,
-    url: `https://arbitrum-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
-    
+    url: `https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
   },
 ];
 

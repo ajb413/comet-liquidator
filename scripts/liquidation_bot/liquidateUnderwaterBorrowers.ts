@@ -5,14 +5,12 @@ import {
 } from '../../build/types';
 import { PoolConfigStruct } from '../../build/types/OnChainLiquidator';
 
-import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+// import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { BigNumberish, Signer } from 'ethers';
 import { sendTxn, simulateTxWithAlchemyApi } from './sendTransaction';
+import { Sleuth } from '@compound-finance/sleuth';
 
-export interface SignerWithFlashbots {
-  signer: Signer;
-  flashbotsProvider?: FlashbotsBundleProvider;
-}
+const addressChunkSize = 1000;
 
 export interface Asset {
   address: string;
@@ -35,6 +33,12 @@ function exp(i: number, d: Numeric = 0, r: Numeric = 6): bigint {
 
 const ethers = hre.ethers;
 
+const gasWhale = {
+  polygon: '0x51bfacfcE67821EC05d3C9bC9a8BC8300fB29564',
+  arbitrum: '0x0938C63109801Ee4243a487aB84DFfA2Bba4589e',
+  mainnet: '0x40B38765696e3d5d8d9d834D8AaD4bB6e418E489',
+};
+
 const addresses = {
   mainnet: {
     COMP: '0xc00e94cb662c3520282e6f5717214004a7f26888',
@@ -51,6 +55,7 @@ const addresses = {
     WBTC: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6',
     WETH: '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
     WMATIC: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    MATICX: '0xfa68FB4628DFF1028CFEc22b4162FCcd0d45efb6',
     USDT: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
     BOB: '0xb0b195aefa3650a6908f15cdac7d92f8a5791b0b'
   },
@@ -65,16 +70,29 @@ const addresses = {
   }
 };
 
+// const liquidationThresholds = {
+//   mainnet: {
+//     'usdc': 10e6,
+//     'weth': 1e18
+//   },
+//   polygon: {
+//     'usdc': 10e6
+//   },
+//   arbitrum: {
+//     'usdc': 10e6
+//   }
+// };
+
 const liquidationThresholds = {
   mainnet: {
-    'usdc': 10e6,
-    'weth': 1e18
+    'usdc': 1,
+    'weth': 1
   },
   polygon: {
-    'usdc': 10e6
+    'usdc': 1
   },
   arbitrum: {
-    'usdc': 10e6
+    'usdc': 1
   }
 };
 
@@ -93,7 +111,8 @@ export const flashLoanPools = {
     usdc: {
       tokenAddress: addresses.polygon.BOB,
       poolFee: 100
-    }
+    },
+
   },
   arbitrum: {
     usdc: {
@@ -223,6 +242,13 @@ export function getPoolConfig(tokenAddress: string) {
         uniswapPoolFee: 500
       }
     },
+    [addresses.polygon.MATICX.toLowerCase()]: {
+      ...defaultPoolConfig,
+      ...{
+        exchange: Exchange.Balancer,
+        balancerPoolId: '0xee278d943584dd8640eaf4cc6c7a5c80c0073e85000200000000000000000bc7'
+      }
+    },
   };
 
   const poolConfig = poolConfigs[tokenAddress.toLowerCase()];
@@ -266,7 +292,6 @@ async function attemptLiquidation(
   comet: CometInterface,
   liquidator: OnChainLiquidator,
   targetAddresses: string[],
-  signerWithFlashbots: SignerWithFlashbots,
   network: string,
   deployment: string
 ) {
@@ -288,16 +313,16 @@ async function attemptLiquidation(
     maxAmountsToPurchase,
     flashLoanPool.tokenAddress,
     flashLoanPool.poolFee,
-    liquidationThreshold,
-    signerWithFlashbots
+    liquidationThreshold
   );
 
   // 2) if initial attempt fails...
   if (!success) {
     // absorb addresses...
     if (targetAddresses.length > 0) {
-      const signerAddress = await signerWithFlashbots.signer.getAddress();
-      await comet.connect(signerWithFlashbots.signer).absorb(signerAddress, targetAddresses);
+      const signer = new ethers.Wallet(process.env.ETH_PK);
+      const signerAddress = await signer.signer.getAddress();
+      await comet.connect(signer.signer).absorb(signerAddress, targetAddresses);
     }
 
     // 3) buy smaller and smaller quantities of assets individually
@@ -308,14 +333,13 @@ async function attemptLiquidation(
         const success_ = await attemptLiquidationViaOnChainLiquidator(
           comet,
           liquidator,
-          [],                             // target addresses
+          targetAddresses,                             // target addresses
           [asset.address],                // assets
           [getPoolConfig(asset.address)], // pool configs
           [amount],                       // max amounts to purchase
           flashLoanPool.tokenAddress,
           flashLoanPool.poolFee,
           liquidationThreshold,
-          signerWithFlashbots,
         );
 
         if (success_) { break; } // stop once you've cleared any amount of an asset
@@ -334,7 +358,6 @@ async function attemptLiquidationViaOnChainLiquidator(
   flashLoanPoolTokenAddress: string,
   flashLoanPoolFee: number,
   liquidationThreshold: number,
-  signerWithFlashbots: SignerWithFlashbots,
 ): Promise<boolean> {
   const liquidatorAddress = liquidator.address;
 
@@ -364,8 +387,10 @@ async function attemptLiquidationViaOnChainLiquidator(
     const txn = await liquidator.populateTransaction.absorbAndArbitrage(
       ...args,
       {
-        gasLimit: Math.ceil(1.3 * (await liquidator.estimateGas.absorbAndArbitrage(...args)).toNumber()),
-        gasPrice: Math.ceil(1.3 * (await hre.ethers.provider.getGasPrice()).toNumber()),
+        // gasLimit: Math.ceil(1.3 * (await liquidator.estimateGas.absorbAndArbitrage(...args)).toNumber()),
+        // gasPrice: Math.ceil(1.3 * (await hre.ethers.provider.getGasPrice()).toNumber()),
+        gasLimit: '1000000',
+        gasPrice: '400000000000',
       }
     );
 
@@ -375,12 +400,13 @@ async function attemptLiquidationViaOnChainLiquidator(
     txn.chainId = hre.network.config.chainId;
 
     const isTestrun = Boolean(process.env.TESTRUN);
+    const useFlasbots = process.env.USE_FLASHBOTS === 'true';
     let success;
     if (isTestrun) {
-      const from = '0x1EFEcb61A2f80Aa34d3b9218B564a64D05946290'; // Polygon gas whale
-      success = await simulateTxWithAlchemyApi(txn, signerWithFlashbots, from);
+      const from = gasWhale[hre.network.name];
+      success = await simulateTxWithAlchemyApi(txn, from);
     } else {
-      success = await sendTxn(txn, signerWithFlashbots);
+      success = await sendTxn(txn, useFlasbots);
     }
 
     if (success) {
@@ -397,12 +423,12 @@ async function attemptLiquidationViaOnChainLiquidator(
   }
 }
 
-async function getUniqueAddresses(comet: CometInterface): Promise<Set<string>> {
+export async function getUniqueAddresses(comet: CometInterface): Promise<Set<string>> {
   const startBlock = 0;
   const endBlock = (await hre.ethers.provider.getBlock('latest')).number;
   let withdrawEvents = [];
 
-  for (let i = startBlock; i < endBlock; i += 1000000) {
+  for (let i = startBlock; i < endBlock; i += 500000) {
     const _startBlock = i;
     const _endBlock = Math.min(endBlock, i + 999999);
     const events = await comet.queryFilter(comet.filters.Withdraw(), _startBlock, _endBlock);
@@ -433,44 +459,58 @@ export async function hasPurchaseableCollateral(comet: CometInterface, assets: A
   return false;
 }
 
+function chunkBy<T>(arr: T[], chunkSize: number): T[][] {
+  let chunks = Math.ceil(arr.length / chunkSize);
+  return [...new Array(chunks)].map((_, i) =>
+    arr.slice(i * chunkSize, ( i + 1 ) * chunkSize )
+  );
+}
+
 export async function liquidateUnderwaterBorrowers(
+  uniqueAddresses: Set<string>,
+  sleuth: Sleuth,
+  liquidatableQuery: any, // TODO: make sure sleuth exports query type
   comet: CometInterface,
   liquidator: OnChainLiquidator,
-  signerWithFlashbots: SignerWithFlashbots,
   network: string,
   deployment: string
-): Promise<boolean> {
+): Promise<[number, boolean]> {
   // const uniqueAddresses = await getUniqueAddresses(comet);
-  const uniqueAddresses = [ '0x1caC3B40F7297009716E6C74796232fEB75922Bb' ];
+  // const uniqueAddresses = ["0x4a6EDc1acD2A9bba971144FFfB361954A7E7d066"];
 
   console.log( `${uniqueAddresses.size} unique addresses found`);
 
   let liquidationAttempted = false;
-  for (const address of uniqueAddresses) {
-    const isLiquidatable = await comet.isLiquidatable(address);
+  let blockNumber;
 
-    console.log( `${address} isLiquidatable=${isLiquidatable}`);
+  for (let chunk of chunkBy([...uniqueAddresses], addressChunkSize)) {
+    console.log(`Checking ${chunk.length} addresses [${chunk.slice(0, 3)}...]`);
+    let [chunkBlockNumber, checks] = await sleuth.fetch<[BigNumberish, boolean[]], [string, string[]]>(liquidatableQuery, [comet.address, chunk]);
+    blockNumber = chunkBlockNumber;
 
-    if (isLiquidatable) {
-      await attemptLiquidation(
-        comet,
-        liquidator,
-        [address],
-        signerWithFlashbots,
-        network,
-        deployment
-      );
-      liquidationAttempted = true;
+    for (const [i, isLiquidatable] of Object.entries(checks)) {
+      let address = chunk[i];
+      console.log( `${address} isLiquidatable=${isLiquidatable}`);
+
+      if (isLiquidatable) {
+        await attemptLiquidation(
+          comet,
+          liquidator,
+          [address],
+          network,
+          deployment
+        );
+        liquidationAttempted = true;
+      }
     }
   }
-  return liquidationAttempted;
+  return [Number(blockNumber), liquidationAttempted];
 }
 
 export async function arbitragePurchaseableCollateral(
   comet: CometInterface,
   liquidator: OnChainLiquidator,
   assets: Asset[],
-  signerWithFlashbots: SignerWithFlashbots,
   network: string,
   deployment: string
 ) {
@@ -484,7 +524,6 @@ export async function arbitragePurchaseableCollateral(
       comet,
       liquidator,
       [], // empty list means we will only buy collateral and not absorb
-      signerWithFlashbots,
       network,
       deployment
     );
