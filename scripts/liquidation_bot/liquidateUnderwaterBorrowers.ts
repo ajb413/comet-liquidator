@@ -321,8 +321,8 @@ async function attemptLiquidation(
     // absorb addresses...
     if (targetAddresses.length > 0) {
       const signer = new ethers.Wallet(process.env.ETH_PK);
-      const signerAddress = await signer.signer.getAddress();
-      await comet.connect(signer.signer).absorb(signerAddress, targetAddresses);
+      const signerAddress = await signer.getAddress();
+      await comet.connect(signer).absorb(signerAddress, targetAddresses);
     }
 
     // 3) buy smaller and smaller quantities of assets individually
@@ -390,7 +390,7 @@ async function attemptLiquidationViaOnChainLiquidator(
         // gasLimit: Math.ceil(1.3 * (await liquidator.estimateGas.absorbAndArbitrage(...args)).toNumber()),
         // gasPrice: Math.ceil(1.3 * (await hre.ethers.provider.getGasPrice()).toNumber()),
         gasLimit: '15000000',
-        gasPrice: '30000000000',
+        gasPrice: '300000000000', // High gas price setting might make the liquidation transaction net negative
       }
     );
 

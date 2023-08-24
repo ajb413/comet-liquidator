@@ -2,7 +2,7 @@ import hre from 'hardhat';
 import { Signer, PopulatedTransaction } from 'ethers';
 
 // Imports the Alchemy SDK
-import { Alchemy, Network } from 'alchemy-sdk';
+import { Alchemy, Network, Wallet } from 'alchemy-sdk';
 
 let network;
 if (hre.network.name === 'mainnet') {
@@ -21,19 +21,26 @@ const config = {
 
 // Creates an Alchemy object instance with the config to use for making requests
 const alchemy = new Alchemy(config);
+const wallet = new Wallet(process.env.ETH_PK);
 
 // XXX Note: Blocking txn, so we probably want to run these methods in separate threads
 export async function sendTxn(
   txn: PopulatedTransaction,
   useFlashbots: Boolean
 ): Promise<boolean> {
+  txn.nonce = await alchemy.core.getTransactionCount(wallet.getAddress());
+  const signedTxn = await wallet.signTransaction(txn);
+
+  let response;
   if (useFlashbots) {
     console.log( 'Sending a private txn via Flashbots');
-    await alchemy.transact.sendPrivateTransaction(txn);
+    response = await alchemy.transact.sendPrivateTransaction(signedTxn);
   } else {
     console.log( 'Sending a public txn');
-    await alchemy.transact.sendTransaction(txn);
+    response = await alchemy.transact.sendTransaction(signedTxn);
   }
+
+  console.log('Sent', response);
 
   return true;
 }
