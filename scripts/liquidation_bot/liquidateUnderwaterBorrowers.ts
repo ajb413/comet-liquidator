@@ -389,8 +389,8 @@ async function attemptLiquidationViaOnChainLiquidator(
       {
         // gasLimit: Math.ceil(1.3 * (await liquidator.estimateGas.absorbAndArbitrage(...args)).toNumber()),
         // gasPrice: Math.ceil(1.3 * (await hre.ethers.provider.getGasPrice()).toNumber()),
-        gasLimit: '1000000',
-        gasPrice: '400000000000',
+        gasLimit: '15000000',
+        gasPrice: '30000000000',
       }
     );
 
@@ -466,45 +466,51 @@ function chunkBy<T>(arr: T[], chunkSize: number): T[][] {
   );
 }
 
-export async function liquidateUnderwaterBorrowers(
+export async function getUnderwaterBorrowers(
   uniqueAddresses: Set<string>,
   sleuth: Sleuth,
   liquidatableQuery: any, // TODO: make sure sleuth exports query type
-  comet: CometInterface,
-  liquidator: OnChainLiquidator,
-  network: string,
-  deployment: string
-): Promise<[number, boolean]> {
-  // const uniqueAddresses = await getUniqueAddresses(comet);
-  // const uniqueAddresses = ["0x4a6EDc1acD2A9bba971144FFfB361954A7E7d066"];
-
-  console.log( `${uniqueAddresses.size} unique addresses found`);
-
-  let liquidationAttempted = false;
-  let blockNumber;
+  comet: CometInterface
+): Promise<string[]> {
+  const underwaterBorrowers = [];
 
   for (let chunk of chunkBy([...uniqueAddresses], addressChunkSize)) {
     console.log(`Checking ${chunk.length} addresses [${chunk.slice(0, 3)}...]`);
     let [chunkBlockNumber, checks] = await sleuth.fetch<[BigNumberish, boolean[]], [string, string[]]>(liquidatableQuery, [comet.address, chunk]);
-    blockNumber = chunkBlockNumber;
 
     for (const [i, isLiquidatable] of Object.entries(checks)) {
       let address = chunk[i];
-      console.log( `${address} isLiquidatable=${isLiquidatable}`);
 
       if (isLiquidatable) {
-        await attemptLiquidation(
-          comet,
-          liquidator,
-          [address],
-          network,
-          deployment
-        );
-        liquidationAttempted = true;
+        console.log('\x1b[35m%s\x1b[0m', `${address} isLiquidatable=${isLiquidatable}`);
+        underwaterBorrowers.push(address);
       }
     }
   }
-  return [Number(blockNumber), liquidationAttempted];
+
+  return underwaterBorrowers;
+}
+
+export async function liquidateUnderwaterBorrowers(
+  liquidatableAddresses: Set<string>,
+  comet: CometInterface,
+  liquidator: OnChainLiquidator,
+  network: string,
+  deployment: string
+): Promise<null> {
+  for (let i = 0; i < liquidatableAddresses.length; i++) {
+    let address = liquidatableAddresses[i];
+
+    await attemptLiquidation(
+      comet,
+      liquidator,
+      [address],
+      network,
+      deployment
+    );
+  }
+
+  return;
 }
 
 export async function arbitragePurchaseableCollateral(

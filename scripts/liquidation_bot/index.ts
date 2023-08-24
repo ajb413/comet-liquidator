@@ -10,8 +10,8 @@ import {
   getAssets,
   getUniqueAddresses,
   liquidateUnderwaterBorrowers,
+  getUnderwaterBorrowers,
 } from './liquidateUnderwaterBorrowers';
-// import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { Signer, Wallet } from 'ethers';
 import { Sleuth } from '@compound-finance/sleuth';
 import * as liquidatableQuerySol from '../../artifacts/contracts/sleuth-queries/LiquidatableQuery.sol/LiquidatableQuery.json';
@@ -56,7 +56,7 @@ async function main() {
   if (!deployment) {
     throw new Error('missing required env variable: DEPLOYMENT');
   }
-  // if (useFlashbots && !ethPk) {
+
   if (!ethPk) {
     throw new Error('missing required env variable: ETH_PK');
   }
@@ -70,42 +70,7 @@ async function main() {
   const cometAddress = cometAddresses[hre.network.name][process.env.DEPLOYMENT];
   let comet = await hre.ethers.getContractAt("CometInterface", cometAddress) as CometInterface;
 
-  // Flashbots provider requires passing in a standard provider
-  // let flashbotsProvider: FlashbotsBundleProvider;
   let signer: Signer;
-  // if (useFlashbots && useFlashbots.toLowerCase() === 'true') {
-  //   // XXX use a designated auth signer
-  //   // `authSigner` is an Ethereum private key that does NOT store funds and is NOT your bot's primary key.
-  //   // This is an identifying key for signing payloads to establish reputation and whitelisting
-  //   // In production, this should be used across multiple bundles to build relationship. In this example, we generate a new wallet each time
-  //   const authSigner = Wallet.createRandom();
-
-  //   if (network === 'mainnet') {
-  //     flashbotsProvider = await FlashbotsBundleProvider.create(
-  //       hre.ethers.provider, // a normal ethers.js provider, to perform gas estimations and nonce lookups
-  //       authSigner, // ethers.js signer wallet, only for signing request payloads, not transactions
-  //     );
-  //   } else if (network === 'goerli') {
-  //     flashbotsProvider = await FlashbotsBundleProvider.create(
-  //       hre.ethers.provider, // a normal ethers.js provider, to perform gas estimations and nonce lookups
-  //       authSigner, // ethers.js signer wallet, only for signing request payloads, not transactions
-  //       'https://relay-goerli.flashbots.net',
-  //       'goerli'
-  //     );
-  //   } else {
-  //     throw new Error(`Unsupported network: ${network}`);
-  //   }
-
-  //   // Note: A `Wallet` is used because it can sign a transaction for flashbots while a generic `Signer` cannot
-  //   // See https://github.com/ethers-io/ethers.js/issues/1869
-  //   signer = new Wallet(ethPk);
-  // } else {
-  //   signer = await getSigner();
-  // }
-
-  // const signerWithFlashbots = { signer, flashbotsProvider };
-
-  // signer
 
   if (!comet) {
     throw new Error(`no deployed Comet found for ${network}/${deployment}`);
@@ -132,34 +97,36 @@ async function main() {
     if (assets.length == 0 || loops >= loopsUntilDataRefresh) {
       console.log( 'Updating assets');
       assets = await getAssets(comet);
-      // uniqueAddresses = await getUniqueAddresses(comet);
-      // uniqueAddresses = ['0x8E52Bf63cBa543592c581CB4Bc1D56aD96fb62F4'];
-      uniqueAddresses = ['0x3e82001810FB6Ac50DE73bcaA2F70d84D70aFD42'];
+      uniqueAddresses = await getUniqueAddresses(comet);
+      // uniqueAddresses = ['0xaddress'];
       loops = 0;
     }
 
-    // console.log( `currentBlockNumber: ${currentBlockNumber}`);
-
-    // Note, the first time is effectively a nop
-    const [blockNumber, liquidationAttempted] = await liquidateUnderwaterBorrowers(
+    const underwaterBorrowers = await getUnderwaterBorrowers(
       uniqueAddresses,
       sleuth,
       liquidatableQuery,
       comet,
-      liquidator,
-      network,
-      deployment
     );
 
-    if (!liquidationAttempted) {
+    if (underwaterBorrowers.length > 0) {
+      await liquidateUnderwaterBorrowers(
+        underwaterBorrowers,
+        comet,
+        liquidator,
+        network,
+        deployment
+      );
+    } else {
       await arbitragePurchaseableCollateral(
-          comet,
-          liquidator,
-          assets,
-          network,
-          deployment
-        );
+        comet,
+        liquidator,
+        assets,
+        network,
+        deployment
+      );
     }
+
     await new Promise(resolve => setTimeout(resolve, loopDelay));
   }
 }
